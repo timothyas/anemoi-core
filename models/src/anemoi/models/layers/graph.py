@@ -76,6 +76,7 @@ class NamedNodesAttributes(nn.Module):
 
         self.trainable_tensors = nn.ModuleDict()
         for nodes_name, nodes in graph_data.node_items():
+            print(f"NamedNodeAttributes nodes_name = {nodes_name}")
             self.register_coordinates(nodes_name, nodes.x)
             self.register_tensor(nodes_name, num_trainable_params)
 
