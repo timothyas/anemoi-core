@@ -248,7 +248,6 @@ class AnemoiAzureMLflowLogger(AnemoiMLflowLogger):
             LOGGER.info("MLflow is logging offline.")
 
         run_id = run_id or os.getenv("MLFLOW_RUN_ID")
-
         run_id, run_name, tags = self._get_mlflow_run_params(
             project_name=project_name,
             run_name=run_name,
