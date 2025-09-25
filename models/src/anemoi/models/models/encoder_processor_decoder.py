@@ -10,6 +10,7 @@
 
 import logging
 from typing import Optional
+from copy import deepcopy
 
 import einops
 import numpy as np
@@ -502,7 +503,7 @@ class AnemoiModelMultiEncProcDec(AnemoiModelEncProcDec):
         model_config = DotDict(model_config)
         self._graph_name_data = model_config.graph.data
         self._graph_name_hidden = model_config.graph.hidden
-        self._graph_name_middle = model_config.graph.middle
+        self._graph_name_middle = "middle" #model_config.graph.middle
         self.multi_step = model_config.training.multistep_input
         self.num_channels = model_config.model.num_channels
 
@@ -527,7 +528,7 @@ class AnemoiModelMultiEncProcDec(AnemoiModelEncProcDec):
 
         # Encoder 1 data -> middle
         self.encoder_1 = instantiate(
-            model_config.model.encoder,
+            deepcopy(model_config.model.encoder),
             _recursive_=False,  # Avoids instantiation of layer_kernels here
             in_channels_src=self.input_dim,
             in_channels_dst=self.input_dim_middle,
@@ -539,9 +540,9 @@ class AnemoiModelMultiEncProcDec(AnemoiModelEncProcDec):
 
         # Encoder 2 middle -> hidden
         self.encoder_2 = instantiate(
-            model_config.model.encoder,
+            deepcopy(model_config.model.encoder),
             _recursive_=False,  # Avoids instantiation of layer_kernels here
-            in_channels_src=self.input_dim_middle,
+            in_channels_src=self.num_channels,
             in_channels_dst=self.input_dim_latent,
             hidden_dim=self.num_channels,
             sub_graph=self._graph_data[(self._graph_name_middle, "to", self._graph_name_hidden)],
@@ -623,47 +624,42 @@ class AnemoiModelMultiEncProcDec(AnemoiModelEncProcDec):
         x_middle_latent = self.node_attributes(self._graph_name_middle, batch_size=batch_size)
         shard_shapes_middle = get_shard_shapes(x_middle_latent, 0, model_comm_group)
 
+        x_hidden_latent = self.node_attributes(self._graph_name_hidden, batch_size=batch_size)
+        shard_shapes_hidden = get_shard_shapes(x_hidden_latent, 0, model_comm_group)
+
         # Encoder 1
         x_data_latent, x_middle_latent = self._run_mapper(
-            self.encoder,
+            self.encoder_1,
             (x_data_latent, x_middle_latent),
             batch_size=batch_size,
-            shard_shapes=(shard_shapes_data, shard_shapes_hidden),
+            shard_shapes=(shard_shapes_data, shard_shapes_middle),
             model_comm_group=model_comm_group,
             x_src_is_sharded=in_out_sharded,  # x_data_latent comes sharded iff in_out_sharded
             x_dst_is_sharded=False,  # x_latent does not come sharded
             keep_x_dst_sharded=True,  # always keep x_latent sharded for the processor
         )
 
-        # Get positional information for the "middle" layer
-        node_attributes_middle = self.node_attributes(self._graph_name_middle, batch_size=batch_size)
-        if in_out_sharded:
-            shard_shapes_nodes = self._get_shard_shapes(node_attributes_middle, 0, grid_shard_shapes, model_comm_group)
-            node_attributes_data = shard_tensor(node_attributes_middle, 0, shard_shapes_nodes, model_comm_group)
-
-        # normalize and add data positional info (lat/lon)
-        print(f"Before torch.cat: {x_middle_latent.shape}")
-        x_middle_latent = torch.cat(
-            (
-                x_middle_latent,
-                node_attributes_data,
-            ),
-            dim=-1,  # feature dimension
-        )
-        print(f"after torch.cat: {x_middle_latent.shape}")
-        shard_shapes_middle = self._get_shard_shapes(x_middle_latent, 0, grid_shard_shapes, model_comm_group)
-
-        x_hidden_latent = self.node_attributes(self._graph_name_hidden, batch_size=batch_size)
-        shard_shapes_hidden = get_shard_shapes(x_hidden_latent, 0, model_comm_group)
+        # Maybe redundant? Add the positional encodings again
+        # Actually, I'm going to bail on this, because the middle nodes are actually defined on the
+        # data source nodes, not on the middle latent space.
+        #middle_attrs_again = self.node_attributes(self._graph_name_middle, batch_size=batch_size)
+        #LOGGER.info(f"Before cat:\n{x_middle_latent.shape}\t{middle_attrs_again.shape}")
+        #x_middle_latent = torch.cat(
+        #    (
+        #        x_middle_latent, # num_channels vector per node
+        #        middle_attrs_again,
+        #    ),
+        #    dim=-1,
+        #)
 
         # Encoder
-        x_data_latent, x_latent = self._run_mapper(
-            self.encoder,
+        x_middle_latent, x_latent = self._run_mapper(
+            self.encoder_2,
             (x_middle_latent, x_hidden_latent),
             batch_size=batch_size,
             shard_shapes=(shard_shapes_middle, shard_shapes_hidden),
             model_comm_group=model_comm_group,
-            x_src_is_sharded=in_out_sharded,  # x_data_latent comes sharded iff in_out_sharded
+            x_src_is_sharded=True,  # x_data_latent comes sharded iff in_out_sharded
             x_dst_is_sharded=False,  # x_latent does not come sharded
             keep_x_dst_sharded=True,  # always keep x_latent sharded for the processor
         )
