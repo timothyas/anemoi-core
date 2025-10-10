@@ -106,8 +106,8 @@ def get_azure_workspace(
         msg = (
             "Azure environment incorrectly configured; tried to use \n  "
             f"- subscription: {sub}\n  - resource_group: {rg}\n  - workspace: {wsname}.\n"
-            "Try explicitly setting your subscription details via `diagnostics.mlflow.subscription_id`,"
-            "`diagnostics.mlflow.resource_group`, `diagnostics.mlflow.workspace_name`."
+            "Try explicitly setting your subscription details via `diagnostics.mlflow.azureml.subscription_id`,"
+            "`diagnostics.mlflow.azureml.resource_group`, `diagnostics.mlflow.azureml.workspace_name`."
         )
         raise ValueError(msg)
     LOGGER.info("Attempting to get Workspace object...")
