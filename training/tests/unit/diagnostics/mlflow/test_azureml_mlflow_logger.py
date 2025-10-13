@@ -1,8 +1,9 @@
+from pathlib import Path
+
 import pytest
 
-from pathlib import Path
-from mlflow.tracking import MlflowClient
-from anemoi.training.diagnostics.mlflow.azureml import AnemoiAzureMLflowLogger, AzureIdentity
+from anemoi.training.diagnostics.mlflow.azureml import AnemoiAzureMLflowLogger
+from anemoi.training.diagnostics.mlflow.azureml import AzureIdentity
 
 
 @pytest.fixture(scope="session")
@@ -18,14 +19,8 @@ def tmp_uri(monkeypatch, tmp_path):
     return uri
 
 
-# @pytest.fixture
-# def tmp_client(tmp_uri):
-#     return MlflowClient(tracking_uri=tmp_uri)
-
-
 @pytest.fixture
 def default_logger(tmp_path, tmp_uri) -> AnemoiAzureMLflowLogger:
-    print
     logger = AnemoiAzureMLflowLogger(
         identity=AzureIdentity("managed"),
         experiment_name="test_experiment",
@@ -53,4 +48,3 @@ def test_mlflowlogger_metric_deduplication(default_logger):
     assert len(default_logger._logged_metrics) == 1
     assert next(iter(default_logger._logged_metrics))[0] == "foo"  # key
     assert next(iter(default_logger._logged_metrics))[1] == 5  # step
-

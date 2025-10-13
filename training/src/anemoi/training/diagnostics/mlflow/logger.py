@@ -625,8 +625,8 @@ class BaseAnemoiMLflowLogger(MLFlowLogger, ABC):
 
         super().finalize(status)
 
-    @staticmethod
     def log_hyperparams_in_mlflow(
+        self,
         client: MlflowClient,
         run_id: str,
         params: dict[str, Any] | Namespace,
@@ -674,7 +674,7 @@ class BaseAnemoiMLflowLogger(MLFlowLogger, ABC):
             except AttributeError:  # Fallback (in case of MAX_PARAM_VAL_LENGTH not available)
                 truncation_length = 250  # Historical default value
 
-            AnemoiMLflowLogger.log_hyperparams_as_mlflow_artifact(client=client, run_id=run_id, params=params)
+            self.__class__.log_hyperparams_as_mlflow_artifact(client=client, run_id=run_id, params=params)
 
             expanded_params = {}
             params = params.copy()
@@ -712,6 +712,7 @@ class BaseAnemoiMLflowLogger(MLFlowLogger, ABC):
         client: MlflowClient,
         run_id: str,
         params: dict[str, Any] | Namespace,
+        separate_configs: bool = False,
     ) -> None:
         """Log hyperparameters as an artifact."""
         import json
@@ -722,8 +723,9 @@ class BaseAnemoiMLflowLogger(MLFlowLogger, ABC):
             def default(self, o: Any) -> str:
                 return str(o)
 
+        now = str(datetime.datetime.now()).replace(" ", "T") if separate_configs else ""
         with tempfile.TemporaryDirectory() as tmp_dir:
-            path = Path(tmp_dir) / "config.json"
+            path = Path(tmp_dir) / f"config.{now}.json"
             with Path.open(path, "w") as f:
                 json.dump(params, f, cls=StrEncoder)
             client.log_artifact(run_id=run_id, local_path=path)
