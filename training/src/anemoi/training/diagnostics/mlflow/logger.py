@@ -712,7 +712,6 @@ class BaseAnemoiMLflowLogger(MLFlowLogger, ABC):
         client: MlflowClient,
         run_id: str,
         params: dict[str, Any] | Namespace,
-        separate_configs: bool = False,
     ) -> None:
         """Log hyperparameters as an artifact."""
         import json
@@ -723,9 +722,8 @@ class BaseAnemoiMLflowLogger(MLFlowLogger, ABC):
             def default(self, o: Any) -> str:
                 return str(o)
 
-        now = str(datetime.datetime.now()).replace(" ", "T") if separate_configs else ""
         with tempfile.TemporaryDirectory() as tmp_dir:
-            path = Path(tmp_dir) / f"config.{now}.json"
+            path = Path(tmp_dir) / f"config.json"
             with Path.open(path, "w") as f:
                 json.dump(params, f, cls=StrEncoder)
             client.log_artifact(run_id=run_id, local_path=path)
