@@ -4,6 +4,7 @@ import pytest
 
 from anemoi.training.diagnostics.mlflow.azureml import AnemoiAzureMLflowLogger
 from anemoi.training.diagnostics.mlflow.azureml import AzureIdentity
+from anemoi.training.schemas.diagnostics import AzureMlflowSchema
 
 
 @pytest.fixture(scope="session")
@@ -33,7 +34,7 @@ def default_logger(tmp_path, tmp_uri) -> AnemoiAzureMLflowLogger:
     return logger
 
 
-def test_mlflowlogger_params_limit(default_logger):
+def test_azure_mlflowlogger_params_limit(default_logger):
     default_logger._max_params_length = 3
     params = {"lr": 0.001, "path": "era5", "anemoi.version": 1.5, "bounding": True}
     # # Expect an exception when logging too many hyperparameters
@@ -41,10 +42,32 @@ def test_mlflowlogger_params_limit(default_logger):
         default_logger.log_hyperparams(params)
 
 
-def test_mlflowlogger_metric_deduplication(default_logger):
+def test_azure_mlflowlogger_metric_deduplication(default_logger):
     default_logger.log_metrics({"foo": 1.0}, step=5)
     default_logger.log_metrics({"foo": 1.0}, step=5)  # duplicate
     # Only the first metric should be logged
     assert len(default_logger._logged_metrics) == 1
     assert next(iter(default_logger._logged_metrics))[0] == "foo"  # key
     assert next(iter(default_logger._logged_metrics))[1] == 5  # step
+
+
+def test_azure_mlflow_schema():
+    config = {
+    '_target_':"anemoi.training.diagnostics.mlflow.azureml.AnemoiAzureMLflowLogger",
+    "enabled": False,
+    "offline": False,
+    "authentication": False,
+    "tracking_uri": None,  # You had ??? — using None as placeholder
+    "experiment_name": "anemoi-debug",
+    "project_name": "Anemoi",
+    "system": False,
+    "terminal": False,
+    "run_name": None,  # If set to null, the run name will be a random UUID
+    "on_resume_create_child": True,
+    "expand_hyperparams": ["config"],  # Which keys in hyperparams to expand
+    "http_max_retries": 35,
+    "max_params_length": 2000,
+    }
+    schema = AzureMlflowSchema(**config)
+
+    assert schema.target_ == "anemoi.training.diagnostics.mlflow.azureml.AnemoiAzureMLflowLogger"
