@@ -723,7 +723,7 @@ class BaseAnemoiMLflowLogger(MLFlowLogger, ABC):
                 return str(o)
 
         with tempfile.TemporaryDirectory() as tmp_dir:
-            path = Path(tmp_dir) / f"config.json"
+            path = Path(tmp_dir) / "config.json"
             with Path.open(path, "w") as f:
                 json.dump(params, f, cls=StrEncoder)
             client.log_artifact(run_id=run_id, local_path=path)
