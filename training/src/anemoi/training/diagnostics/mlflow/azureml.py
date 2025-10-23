@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from typing import Any
 from typing import Literal
+from pytorch_lightning.loggers.mlflow import _convert_params
 
 if TYPE_CHECKING:
     from argparse import Namespace
@@ -222,6 +223,41 @@ class AnemoiAzureMLflowLogger(BaseAnemoiMLflowLogger):
         self.auth = NoAuth()
 
     @staticmethod
+    def log_hyperparams_in_mlflow(
+        client: MlflowClient,
+        run_id: str,
+        params: dict[str, Any] | Namespace,
+        *,
+        expand_keys: list[str] | None = None,
+        log_hyperparams: bool | None = True,
+        clean_params: bool = True,
+        max_params_length: int | None = MAX_PARAMS_LENGTH,
+    ) -> None:
+        """Log hyperparameters to MLflow server.
+
+        Updated version of BaseAnemoiMLflowLogger's method to not log
+        hyperparameters -- they will just be written out to .json in
+        log_hyperparams_as_mlflow_artifact.
+        """
+        if log_hyperparams:
+            params = _convert_params(params)
+
+            # this is needed to resolve optional missing config values to a string, instead of raising a missing error
+            if config := params.get("config"):
+                params["config"] = config.model_dump(by_alias=True)
+
+            import mlflow
+
+            try:  # Check maximum param value length is available and use it
+                truncation_length = mlflow.utils.validation.MAX_PARAM_VAL_LENGTH
+            except AttributeError:  # Fallback (in case of MAX_PARAM_VAL_LENGTH not available)
+                truncation_length = 250  # Historical default value
+
+            AnemoiAzureMLflowLogger.log_hyperparams_as_mlflow_artifact(client=client, run_id=run_id, params=params)
+
+
+
+    @staticmethod
     def log_hyperparams_as_mlflow_artifact(
         client: MlflowClient,
         run_id: str,
@@ -243,3 +279,5 @@ class AnemoiAzureMLflowLogger(BaseAnemoiMLflowLogger):
             with Path.open(path, "w") as f:
                 json.dump(params, f, cls=StrEncoder)
             client.log_artifact(run_id=run_id, local_path=path)
+
+    
