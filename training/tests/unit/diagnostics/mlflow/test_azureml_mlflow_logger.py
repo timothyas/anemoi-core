@@ -1,5 +1,6 @@
 from pathlib import Path
-
+import mlflow
+from mlflow import MlflowClient
 import pytest
 
 from anemoi.training.diagnostics.mlflow.azureml import AnemoiAzureMLflowLogger
@@ -21,6 +22,11 @@ def tmp_uri(monkeypatch, tmp_path):
 
 
 @pytest.fixture
+def tmp_client(tmp_uri):
+    return MlflowClient(tmp_uri)
+
+
+@pytest.fixture
 def default_logger(tmp_path, tmp_uri) -> AnemoiAzureMLflowLogger:
     logger = AnemoiAzureMLflowLogger(
         identity=AzureIdentity("managed"),
@@ -34,12 +40,14 @@ def default_logger(tmp_path, tmp_uri) -> AnemoiAzureMLflowLogger:
     return logger
 
 
-def test_azure_mlflowlogger_params_limit(default_logger):
-    default_logger._max_params_length = 3
+def test_azure_mlflowlogger_no_log_params(default_logger, tmp_client):
+    mlflow.set_experiment("ci-test")
+    exp = tmp_client.get_experiment_by_name("ci-test")
     params = {"lr": 0.001, "path": "era5", "anemoi.version": 1.5, "bounding": True}
-    # # Expect an exception when logging too many hyperparameters
-    with pytest.raises(ValueError, match=r"Too many params:"):
-        default_logger.log_hyperparams(params)
+    default_logger.log_hyperparams(params)
+    # assert that no params were actually logged
+    runs = tmp_client.search_runs(experiment_ids=[exp.experiment_id])
+    assert not any(bool(run.data.metrics) for run in runs)
 
 
 def test_azure_mlflowlogger_metric_deduplication(default_logger):
