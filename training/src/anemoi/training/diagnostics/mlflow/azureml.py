@@ -222,8 +222,9 @@ class AnemoiAzureMLflowLogger(BaseAnemoiMLflowLogger):
         """No need to authenticate with Azure ML flavor of MLFlow logger"""
         self.auth = NoAuth()
 
-    @staticmethod
+    @classmethod
     def log_hyperparams_in_mlflow(
+        cls,
         client: MlflowClient,
         run_id: str,
         params: dict[str, Any] | Namespace,
@@ -253,7 +254,7 @@ class AnemoiAzureMLflowLogger(BaseAnemoiMLflowLogger):
             except AttributeError:  # Fallback (in case of MAX_PARAM_VAL_LENGTH not available)
                 truncation_length = 250  # Historical default value
 
-            AnemoiAzureMLflowLogger.log_hyperparams_as_mlflow_artifact(client=client, run_id=run_id, params=params)
+            cls.log_hyperparams_as_mlflow_artifact(client=client, run_id=run_id, params=params)
 
 
 
