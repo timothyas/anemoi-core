@@ -11,6 +11,7 @@ from .base import BaseGraphModel
 from .diffusion_encoder_processor_decoder import AnemoiDiffusionModelEncProcDec
 from .diffusion_encoder_processor_decoder import AnemoiDiffusionTendModelEncProcDec
 from .encoder_processor_decoder import AnemoiModelEncProcDec
+from .encoder_processor_decoder import AnemoiModelMultiEncProcDec
 from .ens_encoder_processor_decoder import AnemoiEnsModelEncProcDec
 from .hierarchical import AnemoiModelEncProcDecHierarchical
 from .interpolator import AnemoiModelEncProcDecInterpolator
@@ -18,6 +19,7 @@ from .interpolator import AnemoiModelEncProcDecInterpolator
 __all__ = [
     "BaseGraphModel",
     "AnemoiModelEncProcDec",
+    "AnemoiModelMultiEncProcDec",
     "AnemoiEnsModelEncProcDec",
     "AnemoiDiffusionModelEncProcDec",
     "AnemoiDiffusionTendModelEncProcDec",
