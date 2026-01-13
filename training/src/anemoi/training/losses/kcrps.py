@@ -107,6 +107,7 @@ class AlmostFairKernelCRPS(BaseLoss):
         alpha: float = 1.0,
         no_autocast: bool = True,
         ignore_nans: bool = False,
+        memory_efficient: bool = False,
         **kwargs,
     ) -> None:
         """Latitude- and (inverse-)variance-weighted kernel CRPS loss.
@@ -120,11 +121,15 @@ class AlmostFairKernelCRPS(BaseLoss):
             Deactivate autocast for the kernel CRPS calculation
         ignore_nans : bool, optional
             Allow nans in the loss and apply methods ignoring nans for measuring the loss, by default False
+        memory_efficient : bool, optional
+            Use loop-based O(ens) memory implementation instead of O(ens²) matrix operations.
+            Recommended for distributed training to avoid OOM issues. By default False.
         """
         super().__init__(ignore_nans=ignore_nans, **kwargs)
 
         self.alpha = alpha
         self.no_autocast = no_autocast
+        self.memory_efficient = memory_efficient
 
     def _kernel_crps(self, preds: torch.Tensor, targets: torch.Tensor, alpha: float = 1.0) -> torch.Tensor:
         """Kernel (ensemble) CRPS.
@@ -142,12 +147,30 @@ class AlmostFairKernelCRPS(BaseLoss):
         Returns
         -------
         kCRPS : torch.Tensor
-            The point-wise kernel CRPS, shape (batch_size, 1, latlon).
+            The point-wise kernel CRPS, shape (batch_size, n_vars, latlon).
         """
         ens_size = preds.shape[-1]
 
+        assert ens_size > 1, "Ensemble size must be greater than 1."
+
         epsilon = (1.0 - alpha) / ens_size
 
+        if self.memory_efficient:
+            # Memory-efficient loop implementation: O(ens) memory
+            # MAE term: mean of |pred_i - target| over ensemble members
+            mae = torch.mean(torch.abs(preds - targets.unsqueeze(dim=-1)), dim=-1)
+
+            # Ensemble variance term: Σ_{i<j} |pred_i - pred_j|
+            ens_var = torch.zeros(size=preds.shape[:-1], device=preds.device, dtype=preds.dtype)
+            for i in range(ens_size):
+                ens_var += torch.sum(torch.abs(preds[..., i : i + 1] - preds[..., i + 1 :]), dim=-1)
+
+            # Coefficient for variance term: (1 - epsilon) / [ens_size * (ens_size - 1)]
+            var_coef = (1.0 - epsilon) / (ens_size * (ens_size - 1))
+
+            return mae - var_coef * ens_var
+
+        # Original matrix implementation: O(ens²) memory
         var = torch.abs(preds.unsqueeze(dim=-1) - preds.unsqueeze(dim=-2))
         diag = torch.eye(ens_size, dtype=torch.bool, device=preds.device)
         err_r = einops.repeat(
@@ -158,8 +181,6 @@ class AlmostFairKernelCRPS(BaseLoss):
 
         mem_err = err_r * ~diag
         mem_err_transpose = mem_err.transpose(-1, -2)
-
-        assert ens_size > 1, "Ensemble size must be greater than 1."
 
         coef = 1.0 / (2.0 * ens_size * (ens_size - 1))
         return coef * torch.sum(mem_err + mem_err_transpose - (1 - epsilon) * var, dim=(-1, -2))
