@@ -242,6 +242,8 @@ class AlmostFairKernelCRPSSchema(BaseLossSchema):
     weighted by (ens-size-1)^-1) and standard CRPS (1.0 = fully fair, 0.0 = fully unfair)"""
     no_autocast: bool = True
     "Deactivate autocast for the kernel CRPS calculation"
+    memory_efficient: bool = False
+    "Use loop-based O(ens) memory implementation instead of O(ens²) matrix operations. Recommended for distributed training."
 
 
 class HuberLossSchema(BaseLossSchema):
