@@ -199,14 +199,24 @@ class GraphEnsForecaster(BaseRolloutGraphModule):
             LOGGER.debug("SHAPE: y.shape = %s", list(y.shape))
             # y includes the auxiliary variables, so we must leave those out when computing the loss
 
-            loss, metrics_next, y_pred_ens_group = checkpoint(
-                self.compute_loss_metrics,
-                y_pred,
-                y,
-                step=rollout_step,
-                validation_mode=validation_mode,
-                use_reentrant=False,
-            )
+            # During validation, skip checkpoint since no backward pass is needed
+            # and checkpoint can interfere with NCCL collectives (causing hangs)
+            if validation_mode:
+                loss, metrics_next, y_pred_ens_group = self.compute_loss_metrics(
+                    y_pred,
+                    y,
+                    step=rollout_step,
+                    validation_mode=validation_mode,
+                )
+            else:
+                loss, metrics_next, y_pred_ens_group = checkpoint(
+                    self.compute_loss_metrics,
+                    y_pred,
+                    y,
+                    step=rollout_step,
+                    validation_mode=validation_mode,
+                    use_reentrant=False,
+                )
 
             x = self._advance_input(x, y_pred, batch, rollout_step)
 
