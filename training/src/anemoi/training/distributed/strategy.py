@@ -425,19 +425,30 @@ class DDPEnsGroupStrategy(DDPStrategy):
         )
 
         # ens_comm_subgroup: subgroup of same model_comm_group ranks inside the ensemble group
-        spacing = self.model_comm_group_size
-        ens_comm_subgroup_ranks = [
-            ens_comm_group[offset::spacing] for ens_comm_group in ens_comm_group_ranks for offset in range(spacing)
-        ]
-
-        ens_comm_subgroups = [torch.distributed.new_group(x) for x in ens_comm_subgroup_ranks]
-
+        # When model_comm_group_size=1, subgroup equals the full ensemble group, so reuse it
+        # to avoid creating duplicate NCCL communicators with identical ranks
         ens_comm_subgroup_size = self.ens_comm_group_size // self.model_comm_group_size
-        ens_comm_subgroup_id = ens_comm_group_id * self.model_comm_group_size + model_comm_group_rank
-        ens_comm_subgroup_rank = ens_comm_group_rank // self.model_comm_group_size
-        ens_comm_num_subgroups = self.world_size // ens_comm_subgroup_size
 
-        ens_comm_subgroup = ens_comm_subgroups[ens_comm_subgroup_id]
+        if self.model_comm_group_size == 1:
+            # Subgroup is identical to the ensemble group, reuse it
+            ens_comm_subgroup = ens_comm_group
+            ens_comm_subgroup_id = ens_comm_group_id
+            ens_comm_subgroup_rank = ens_comm_group_rank
+            ens_comm_num_subgroups = ens_comm_num_groups
+            ens_comm_subgroup_ranks = ens_comm_group_ranks  # for logging
+        else:
+            spacing = self.model_comm_group_size
+            ens_comm_subgroup_ranks = [
+                ens_comm_group[offset::spacing] for ens_comm_group in ens_comm_group_ranks for offset in range(spacing)
+            ]
+
+            ens_comm_subgroups = [torch.distributed.new_group(x) for x in ens_comm_subgroup_ranks]
+
+            ens_comm_subgroup_id = ens_comm_group_id * self.model_comm_group_size + model_comm_group_rank
+            ens_comm_subgroup_rank = ens_comm_group_rank // self.model_comm_group_size
+            ens_comm_num_subgroups = self.world_size // ens_comm_subgroup_size
+
+            ens_comm_subgroup = ens_comm_subgroups[ens_comm_subgroup_id]
         self.model.set_ens_comm_subgroup(
             ens_comm_subgroup,
             ens_comm_subgroup_id,
