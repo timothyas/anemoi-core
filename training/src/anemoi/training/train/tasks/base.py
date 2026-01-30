@@ -377,6 +377,7 @@ class BaseGraphModule(pl.LightningModule, ABC):
             x,
             model_comm_group=self.model_comm_group,
             grid_shard_shapes=self.grid_shard_shapes,
+            ens_comm_group=getattr(self, "ens_comm_group", None),
             **kwargs,
         )
 

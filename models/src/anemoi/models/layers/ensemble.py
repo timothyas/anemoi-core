@@ -288,3 +288,60 @@ class NoiseInjector(BaseNoiseInjector):
             self.projection(torch.cat([x, noise], dim=-1)),
             None,
         )
+
+
+class SimpleNoiseConditioning(BaseNoiseInjector):
+    """Noise Conditioning, not necessarily at the grid scale and without an MLP"""
+
+    def __init__(
+        self,
+        *,
+        noise_std: int,
+        noise_channels_dim: int,
+        num_channels: int | None = None,
+    ) -> None:
+        """Initialize NoiseConditioning."""
+        super().__init__()
+        assert noise_channels_dim > 0, "Noise channels must be a positive integer"
+
+        self.noise_std = noise_std
+
+        # Noise channels
+        self.noise_channels = noise_channels_dim
+
+        LOGGER.info("processor noise channels = %d", self.noise_channels)
+
+    def forward(
+        self,
+        x: Tensor,
+        batch_size: int,
+        ensemble_size: int,
+        grid_size: int,
+        shard_shapes_ref: tuple[tuple[int], tuple[int]],
+        noise_dtype: torch.dtype = torch.float32,
+        model_comm_group: Optional[ProcessGroup] = None,
+    ) -> tuple[Tensor, Tensor]:
+
+        LOGGER.info(f"batch_size, ensemble_size, shard_shapes_ref, model_comm_group: {batch_size} ... {ensemble_size} ... {shard_shapes_ref} ... {model_comm_group}")
+
+        noise_shape = (
+            batch_size,
+            ensemble_size,
+            self.noise_channels,
+        )
+
+        noise = torch.randn(size=noise_shape, dtype=noise_dtype, device=x.device) * self.noise_std
+        noise.requires_grad = False
+
+        noise = einops.rearrange(noise, "batch ensemble vars -> (batch ensemble) vars")  # shape of x
+        # TODO:
+        # * confirm that we have the same global vector when using a sharded model (i.e. same seed per model shard)
+        # * confirm that it is different per batch and ensemble member
+        #noise_shard_shapes = get_shard_shapes(noise, 0, model_comm_group)
+        #LOGGER.info(f" OG noise shape and noise_shard_shapes = {noise.shape} ... {noise_shard_shapes}")
+        #noise = shard_tensor(noise, 0, noise_shard_shapes, model_comm_group)  # sharded grid dim, full channels
+        #LOGGER.info(f"noise shape = {noise.shape}")
+
+        LOGGER.debug("Noise noise.shape = %s, noise.norm: %.9e", noise.shape, torch.linalg.norm(noise))
+
+        return x, noise

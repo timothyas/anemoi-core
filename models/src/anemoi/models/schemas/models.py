@@ -282,9 +282,19 @@ class NoiseInjectorSchema(BaseModel):
     layer_kernels: Union[dict[str, dict], None] = Field(default_factory=dict)
     "Settings related to custom kernels for encoder processor and decoder blocks"
 
+class SimpleNoiseConditioningSchema(BaseModel):
+    """Schema for NoiseConditioning - generates noise for conditioning."""
+
+    target_: Literal["anemoi.models.layers.ensemble.SimpleNoiseConditioning"] = Field(..., alias="_target_")
+    "Noise conditioning layer class"
+    noise_std: NonNegativeInt = Field(example=1)
+    "Standard deviation of the noise to be injected."
+    noise_channels_dim: NonNegativeInt = Field(example=4)
+    "Number of channels in the noise tensor."
+
 
 NoiseInjectorUnion = Annotated[
-    Union[NoOpNoiseInjectorSchema, NoiseConditioningSchema, NoiseInjectorSchema],
+    Union[NoOpNoiseInjectorSchema, NoiseConditioningSchema, NoiseInjectorSchema, SimpleNoiseConditioningSchema],
     Field(discriminator="target_"),
 ]
 
