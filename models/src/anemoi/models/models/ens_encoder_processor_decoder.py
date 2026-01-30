@@ -237,12 +237,6 @@ class AnemoiEnsModelEncProcDec(AnemoiModelEncProcDec):
             model_comm_group=model_comm_group,
         )
         processor_kwargs = {"cond": latent_noise} if latent_noise is not None else {}
-        LOGGER.info(f"x_latent_proc.shape, latent_noise.shape, len(processor_kwargs): {x_latent_proc.shape} ... {latent_noise.shape} ... {len(processor_kwargs)}")
-
-        rank = torch.distributed.get_rank()
-        mID = rank // model_comm_group.size()
-        eID = rank // ens_comm_group.size()
-        LOGGER.info(f"model, ens = ({model_comm_group.rank()}, {mID}); ({ens_comm_group.rank()}, {eID}) ... noise = {latent_noise}")
 
         # Processor
         x_latent_proc = self.processor(

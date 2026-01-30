@@ -305,8 +305,6 @@ class SimpleNoiseConditioning(BaseNoiseInjector):
         assert noise_channels_dim > 0, "Noise channels must be a positive integer"
 
         self.noise_std = noise_std
-
-        # Noise channels
         self.noise_channels = noise_channels_dim
 
         LOGGER.info("processor noise channels = %d", self.noise_channels)
@@ -322,8 +320,6 @@ class SimpleNoiseConditioning(BaseNoiseInjector):
         model_comm_group: Optional[ProcessGroup] = None,
     ) -> tuple[Tensor, Tensor]:
 
-        LOGGER.info(f"batch_size, ensemble_size, shard_shapes_ref, model_comm_group: {batch_size} ... {ensemble_size} ... {shard_shapes_ref} ... {model_comm_group}")
-
         noise_shape = (
             batch_size,
             ensemble_size,
@@ -334,14 +330,6 @@ class SimpleNoiseConditioning(BaseNoiseInjector):
         noise.requires_grad = False
 
         noise = einops.rearrange(noise, "batch ensemble vars -> (batch ensemble) vars")  # shape of x
-        # TODO:
-        # * confirm that we have the same global vector when using a sharded model (i.e. same seed per model shard)
-        # * confirm that it is different per batch and ensemble member
-        #noise_shard_shapes = get_shard_shapes(noise, 0, model_comm_group)
-        #LOGGER.info(f" OG noise shape and noise_shard_shapes = {noise.shape} ... {noise_shard_shapes}")
-        #noise = shard_tensor(noise, 0, noise_shard_shapes, model_comm_group)  # sharded grid dim, full channels
-        #LOGGER.info(f"noise shape = {noise.shape}")
-
         LOGGER.debug("Noise noise.shape = %s, noise.norm: %.9e", noise.shape, torch.linalg.norm(noise))
 
         return x, noise
