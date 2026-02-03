@@ -237,7 +237,7 @@ class GraphTransformerBaseMapper(BaseMapper, ABC):
         model_comm_group: Optional[ProcessGroup] = None,
         x_src_is_sharded: bool = False,
         x_dst_is_sharded: bool = False,
-        cond: Optional[tuple[Tensor, Tensor]] = None,
+        cond: tuple[Tensor, Tensor] | Tensor | None = None,
         edge_shard_shapes: Optional[tuple] = None,
     ):
         x_src, x_dst = x
@@ -270,7 +270,7 @@ class GraphTransformerBaseMapper(BaseMapper, ABC):
         size_src_full_dst_shard = (x_src.shape[0], x_dst.shape[0])
         x_src, edge_index, nodes_src = drop_unconnected_src_nodes(x_src, edge_index, size_src_full_dst_shard)
 
-        if cond is not None:  # sync cond_src to match x_src:
+        if isinstance(cond, tuple):  # sync cond_src to match x_src:
             cond_src, cond_dst = cond
             shapes_cond_src = change_channels_in_shape(shapes_src, cond_src.shape[-1])
             cond_src_full = sync_tensor(cond_src, 0, shapes_cond_src, model_comm_group, gather_in_fwd=True)
@@ -291,7 +291,7 @@ class GraphTransformerBaseMapper(BaseMapper, ABC):
         batch_size: int,
         size: tuple[int],
         model_comm_group: Optional[ProcessGroup] = None,
-        cond: Optional[tuple[Tensor, Tensor]] = None,
+        cond: tuple[Tensor, Tensor] | Tensor | None = None,
         **kwargs,
     ) -> Tensor:
         x_src, x_dst = x
@@ -311,7 +311,7 @@ class GraphTransformerBaseMapper(BaseMapper, ABC):
         x_dst_chunk = x_dst[dst_chunk]
         chunk_size = (x_src_chunk.shape[0], x_dst_chunk.shape[0])
 
-        if cond is not None:  # update cond with correct conditioning
+        if isinstance(cond, tuple):  # update cond with correct conditioning
             cond_src, cond_dst = cond
             cond = (cond_src[connected_src_nodes], cond_dst[dst_chunk])
 
@@ -351,7 +351,7 @@ class GraphTransformerBaseMapper(BaseMapper, ABC):
         x_src_is_sharded: bool = False,
         x_dst_is_sharded: bool = False,
         keep_x_dst_sharded: bool = False,
-        cond: Optional[tuple[Tensor, Tensor]] = None,
+        cond: tuple[Tensor, Tensor] | Tensor | None = None,
         edge_shard_shapes: Optional[tuple] = None,
         **kwargs,
     ) -> PairTensor:

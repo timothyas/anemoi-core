@@ -783,14 +783,24 @@ class GraphTransformerMapperBlock(GraphTransformerBaseBlock):
         batch_size: int,
         size: Union[int, tuple[int, int]],
         model_comm_group: Optional[ProcessGroup] = None,
-        cond: Optional[tuple[Tensor, Tensor]] = None,
+        cond: tuple[Tensor, Tensor] | Tensor | None = None,
         **layer_kwargs,
     ):
         x_skip = x
 
         # In case we have conditionings we pass these to the layer norm
-        cond_src_kwargs = {"cond": cond[0]} if cond is not None else {}
-        cond_dst_kwargs = {"cond": cond[1]} if cond is not None else {}
+        if isinstance(cond, tuple):
+            cond_src_kwargs = {"cond": cond[0]}
+            cond_dst_kwargs = {"cond": cond[1]}
+
+        elif isinstance(cond, Tensor):
+            cond_src_kwargs = {"cond": cond}
+            cond_dst_kwargs = {"cond": cond}
+
+        else:
+            cond_src_kwargs = {}
+            cond_dst_kwargs = {}
+
 
         x = (
             self.layer_norm_attention_src(x[0], **cond_src_kwargs),

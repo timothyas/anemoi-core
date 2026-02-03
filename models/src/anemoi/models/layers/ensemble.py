@@ -314,10 +314,7 @@ class SimpleNoiseConditioning(BaseNoiseInjector):
         x: Tensor,
         batch_size: int,
         ensemble_size: int,
-        grid_size: int,
-        shard_shapes_ref: tuple[tuple[int], tuple[int]],
         noise_dtype: torch.dtype = torch.float32,
-        model_comm_group: Optional[ProcessGroup] = None,
     ) -> tuple[Tensor, Tensor]:
 
         noise_shape = (
