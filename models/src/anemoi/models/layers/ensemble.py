@@ -298,7 +298,10 @@ class SimpleNoiseConditioning(BaseNoiseInjector):
         *,
         noise_std: int,
         noise_channels_dim: int,
+        noise_mlp_hidden_dim: int,
         num_channels: int | None = None,
+        layer_kernels: dict,
+
     ) -> None:
         """Initialize NoiseConditioning."""
         super().__init__()
@@ -306,6 +309,18 @@ class SimpleNoiseConditioning(BaseNoiseInjector):
 
         self.noise_std = noise_std
         self.noise_channels = noise_channels_dim
+
+        self.layer_factory = load_layer_kernels(layer_kernels)
+
+        self.noise_mlp = MLP(
+            noise_channels_dim,
+            noise_mlp_hidden_dim,
+            num_channels,
+            layer_kernels=self.layer_factory,
+            n_extra_layers=-1,
+            final_activation=False,
+            layer_norm=False,
+        )
 
         LOGGER.info("processor noise channels = %d", self.noise_channels)
 
@@ -327,6 +342,8 @@ class SimpleNoiseConditioning(BaseNoiseInjector):
         noise.requires_grad = False
 
         noise = einops.rearrange(noise, "batch ensemble vars -> (batch ensemble) vars")  # shape of x
+
+        noise = checkpoint(self.noise_mlp, noise, use_reentrant=False)
         LOGGER.debug("Noise noise.shape = %s, noise.norm: %.9e", noise.shape, torch.linalg.norm(noise))
 
         return x, noise
