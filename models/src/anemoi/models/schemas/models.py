@@ -304,6 +304,54 @@ class EnsModelSchema(BaseModelSchema):
     "Noise injection configuration. Use NoOpNoiseInjector to disable, NoiseConditioning for conditioning, or NoiseInjector for direct injection."
     condition_on_residual: bool = Field(default=False)
     "Whether to condition the noise injection on the residual connection."
+    noise_conditioned_modules: list[str] = Field(default=["processor"])
+    "List of modules to apply noise conditioning to. Valid options: encoder, processor, decoder."
+    layer_kernels: Union[dict[str, dict], None] = Field(default_factory=dict)
+    "Global layer kernel settings. Per-module layer_kernels take precedence over this."
+
+    @model_validator(mode="after")
+    def validate_noise_conditioned_modules(self) -> "EnsModelSchema":
+        valid_modules = {"encoder", "processor", "decoder"}
+        invalid = set(self.noise_conditioned_modules) - valid_modules
+        if invalid:
+            msg = f"Invalid noise_conditioned_modules: {invalid}. Valid options are: {valid_modules}"
+            raise ValueError(msg)
+        return self
+
+    @model_validator(mode="after")
+    def validate_noise_conditioned_modules_have_conditional_layer_norm(self) -> "EnsModelSchema":
+        conditional_ln_target = "anemoi.models.layers.normalization.ConditionalLayerNorm"
+
+        # Get global layer_kernels as fallback
+        global_layer_kernels = self.layer_kernels or {}
+        global_layer_norm = global_layer_kernels.get("LayerNorm", {})
+
+        for module_name in self.noise_conditioned_modules:
+            module = getattr(self, module_name)
+
+            # Get module-specific layer_kernels
+            module_layer_kernels = getattr(module, "layer_kernels", None) or {}
+            module_layer_norm = module_layer_kernels.get("LayerNorm", {})
+
+            # Resolve: use module-specific if defined, else fall back to global
+            resolved_layer_norm = module_layer_norm if module_layer_norm else global_layer_norm
+
+            if not resolved_layer_norm:
+                msg = (
+                    f"Module '{module_name}' is in noise_conditioned_modules but has no LayerNorm configured. "
+                    f"ConditionalLayerNorm is required for noisy modules."
+                )
+                raise ValueError(msg)
+
+            target = resolved_layer_norm.get("_target_")
+            if target != conditional_ln_target:
+                msg = (
+                    f"Module '{module_name}' in noise_conditioned_modules requires ConditionalLayerNorm. "
+                    f"Found: {target}, expected: {conditional_ln_target}"
+                )
+                raise ValueError(msg)
+
+        return self
 
 
 class DiffusionModelSchema(BaseModelSchema):
