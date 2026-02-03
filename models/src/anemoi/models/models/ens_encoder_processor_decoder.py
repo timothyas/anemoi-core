@@ -38,6 +38,7 @@ class AnemoiEnsModelEncProcDec(AnemoiModelEncProcDec):
         graph_data: HeteroData,
     ) -> None:
         self.condition_on_residual = DotDict(model_config).model.condition_on_residual
+        self.noise_conditioned_modules = DotDict(model_config).model.noise_conditioned_modules
         super().__init__(
             model_config=model_config,
             data_indices=data_indices,
@@ -47,11 +48,48 @@ class AnemoiEnsModelEncProcDec(AnemoiModelEncProcDec):
 
     def _build_networks(self, model_config):
         super()._build_networks(model_config)
+        self._validate_noise_conditioned_modules(model_config)
         self.noise_injector = instantiate(
             model_config.model.noise_injector,
             _recursive_=False,
             num_channels=self.num_channels,
         )
+
+    def _validate_noise_conditioned_modules(self, model_config):
+        """Validate that noise-conditioned modules have ConditionalLayerNorm configured."""
+        conditional_ln_target = "anemoi.models.layers.normalization.ConditionalLayerNorm"
+
+        # Get global layer_kernels as fallback
+        global_layer_kernels = getattr(model_config.model, "layer_kernels", None) or {}
+        global_layer_norm = global_layer_kernels.get("LayerNorm", {})
+
+        for module_name in self.noise_conditioned_modules:
+            module_config = getattr(model_config.model, module_name, None)
+            if module_config is None:
+                msg = f"Module '{module_name}' in noise_conditioned_modules not found in model config."
+                raise ValueError(msg)
+
+            # Get module-specific layer_kernels
+            module_layer_kernels = getattr(module_config, "layer_kernels", None) or {}
+            module_layer_norm = module_layer_kernels.get("LayerNorm", {})
+
+            # Resolve: use module-specific if defined, else fall back to global
+            resolved_layer_norm = module_layer_norm if module_layer_norm else global_layer_norm
+
+            if not resolved_layer_norm:
+                msg = (
+                    f"Module '{module_name}' is in noise_conditioned_modules but has no LayerNorm configured. "
+                    f"ConditionalLayerNorm is required for noise-conditioned modules."
+                )
+                raise ValueError(msg)
+
+            target = resolved_layer_norm.get("_target_")
+            if target != conditional_ln_target:
+                msg = (
+                    f"Module '{module_name}' in noise_conditioned_modules requires ConditionalLayerNorm. "
+                    f"Found: {target}, expected: {conditional_ln_target}"
+                )
+                raise ValueError(msg)
 
     def _calculate_input_dim(self, dataset_name: str) -> int:
         base_input_dim = super()._calculate_input_dim(dataset_name)
