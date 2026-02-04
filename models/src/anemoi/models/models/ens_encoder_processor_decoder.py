@@ -303,6 +303,8 @@ class AnemoiEnsModelEncProcDec(AnemoiModelEncProcDec):
                     shard_shapes_ref=shard_shapes_hidden,
                     model_comm_group=model_comm_group,
                 )
+            else:
+                x_latent_proc = x_latent
 
             if latent_noise is not None:
                 processor_kwargs["cond"] = latent_noise
