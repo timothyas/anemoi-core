@@ -301,7 +301,6 @@ class SimpleNoiseConditioning(BaseNoiseInjector):
         noise_mlp_hidden_dim: int,
         num_channels: int | None = None,
         layer_kernels: dict,
-
     ) -> None:
         """Initialize NoiseConditioning."""
         super().__init__()
