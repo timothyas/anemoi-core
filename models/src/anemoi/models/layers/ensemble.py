@@ -342,7 +342,11 @@ class SimpleNoiseConditioning(BaseNoiseInjector):
 
         noise = einops.rearrange(noise, "batch ensemble vars -> (batch ensemble) vars")  # shape of x
 
-        noise = checkpoint(self.noise_mlp, noise, use_reentrant=False)
+        # Note: We intentionally don't use checkpoint() here because latent_noise is shared
+        # across multiple downstream checkpoints (encoder, processor, decoder). Having a
+        # checkpointed output feed into multiple downstream checkpoints causes "number of
+        # saved states not matching" errors during backward recomputation.
+        noise = self.noise_mlp(noise)
         LOGGER.debug("Noise noise.shape = %s, noise.norm: %.9e", noise.shape, torch.linalg.norm(noise))
 
         return x, noise
