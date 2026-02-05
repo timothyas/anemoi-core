@@ -264,7 +264,6 @@ class TransformerProcessor(BaseProcessor):
         batch_size: int,
         model_comm_group: Optional[ProcessGroup] = None,
         cond: Tensor | None = None,
-        **kwargs,
     ) -> Tensor:
         for layer_id in range(chunk_start, chunk_start + self.chunk_size):
             data = self.proc[layer_id](
@@ -273,7 +272,6 @@ class TransformerProcessor(BaseProcessor):
                 batch_size,
                 model_comm_group,
                 cond,
-                **kwargs,
             )
 
         return data
@@ -285,7 +283,6 @@ class TransformerProcessor(BaseProcessor):
         batch_size: int,
         model_comm_group: Optional[ProcessGroup] = None,
         cond: Tensor | None = None,
-        **kwargs,
     ) -> Tensor:
         """Run Layers with checkpoints around chunks."""
         for chunk_start in range(0, self.num_layers, self.chunk_size):
@@ -297,7 +294,6 @@ class TransformerProcessor(BaseProcessor):
                 batch_size,
                 model_comm_group,
                 cond,
-                **kwargs,
                 use_reentrant=False,
             )
 
@@ -312,7 +308,6 @@ class TransformerProcessor(BaseProcessor):
         edge_index: Optional[Adj] = None,
         model_comm_group: Optional[ProcessGroup] = None,
         cond: Tensor | None = None,
-        **kwargs,
     ) -> Tensor:
         shape_nodes = change_channels_in_shape(shard_shapes, self.num_channels)
         if model_comm_group:
@@ -326,7 +321,6 @@ class TransformerProcessor(BaseProcessor):
             batch_size,
             model_comm_group,
             cond,
-            **kwargs,
         )
 
         return x
@@ -410,7 +404,7 @@ class GNNProcessor(BaseProcessor):
         edge_index: Adj,
         model_comm_group: Optional[ProcessGroup] = None,
         edge_shard_shapes: Optional[tuple] = None,
-        *args,
+        cond: Tensor | None = None,  # accepted but unused by GNNProcessor
         **kwargs,
     ) -> Tensor:
         shape_nodes = change_channels_in_shape(shard_shapes, self.num_channels)
@@ -423,7 +417,7 @@ class GNNProcessor(BaseProcessor):
             )
 
         x, edge_attr = self.run_layers(
-            (x, edge_attr), edge_index, (shape_nodes, shape_nodes), model_comm_group, **kwargs
+            (x, edge_attr), edge_index, (shape_nodes, shape_nodes), model_comm_group
         )
 
         return x
@@ -510,7 +504,7 @@ class GraphTransformerProcessor(BaseProcessor):
         edge_index: Adj,
         model_comm_group: Optional[ProcessGroup] = None,
         edge_shard_shapes: Optional[tuple] = None,
-        *args,
+        cond: Tensor | None = None,  # accepted but unused by GraphTransformerProcessor
         **kwargs,
     ) -> Tensor:
         size = sum(x[0] for x in shard_shapes)
@@ -534,7 +528,6 @@ class GraphTransformerProcessor(BaseProcessor):
             batch_size=batch_size,
             size=size,
             model_comm_group=model_comm_group,
-            **kwargs,
         )
 
         return x

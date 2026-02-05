@@ -292,7 +292,6 @@ class GraphTransformerBaseMapper(BaseMapper, ABC):
         size: tuple[int],
         model_comm_group: Optional[ProcessGroup] = None,
         cond: tuple[Tensor, Tensor] | Tensor | None = None,
-        **kwargs,
     ) -> Tensor:
         x_src, x_dst = x
 
@@ -333,7 +332,6 @@ class GraphTransformerBaseMapper(BaseMapper, ABC):
             chunk_size,
             model_comm_group,
             cond=cond,
-            **kwargs,
         )
 
         return self.post_process(
@@ -353,7 +351,6 @@ class GraphTransformerBaseMapper(BaseMapper, ABC):
         keep_x_dst_sharded: bool = False,
         cond: tuple[Tensor, Tensor] | Tensor | None = None,
         edge_shard_shapes: Optional[tuple] = None,
-        **kwargs,
     ) -> PairTensor:
 
         x_src, x_dst, edge_attr, edge_index, shapes_src, shapes_dst, cond_prepped = checkpoint(
@@ -391,7 +388,6 @@ class GraphTransformerBaseMapper(BaseMapper, ABC):
                 size,
                 model_comm_group,
                 cond_prepped,
-                **kwargs,
                 use_reentrant=False,
             ).to(dtype=out_type)
 
@@ -412,7 +408,7 @@ class GraphTransformerBaseMapper(BaseMapper, ABC):
         x_dst_is_sharded: bool = False,
         keep_x_dst_sharded: bool = False,
         edge_shard_shapes: Optional[tuple] = None,
-        **kwargs,
+        cond: tuple[Tensor, Tensor] | Tensor | None = None,
     ) -> PairTensor:
         size = (sum(x[0] for x in shard_shapes[0]), sum(x[0] for x in shard_shapes[1]))
 
@@ -440,7 +436,7 @@ class GraphTransformerBaseMapper(BaseMapper, ABC):
             batch_size=batch_size,
             size=size,
             model_comm_group=model_comm_group,
-            **kwargs,
+            cond=cond,
         )
 
         x_dst = self.post_process(
@@ -461,27 +457,40 @@ class GraphTransformerBaseMapper(BaseMapper, ABC):
         x_dst_is_sharded: bool = False,
         keep_x_dst_sharded: bool = False,
         edge_shard_shapes: Optional[tuple] = None,
+        cond: tuple[Tensor, Tensor] | Tensor | None = None,
         **kwargs,
     ) -> PairTensor:
 
-        kwargs_forward = {
-            "x": x,
-            "batch_size": batch_size,
-            "shard_shapes": shard_shapes,
-            "edge_attr": edge_attr,
-            "edge_index": edge_index,
-            "model_comm_group": model_comm_group,
-            "x_src_is_sharded": x_src_is_sharded,
-            "x_dst_is_sharded": x_dst_is_sharded,
-            "keep_x_dst_sharded": keep_x_dst_sharded,
-            "edge_shard_shapes": edge_shard_shapes,
-            **kwargs,
-        }
-
         if self.shard_strategy == "edges":
-            return self.mapper_forward_with_edge_sharding(**kwargs_forward)
+            return self.mapper_forward_with_edge_sharding(
+                x=x,
+                batch_size=batch_size,
+                shard_shapes=shard_shapes,
+                edge_attr=edge_attr,
+                edge_index=edge_index,
+                model_comm_group=model_comm_group,
+                x_src_is_sharded=x_src_is_sharded,
+                x_dst_is_sharded=x_dst_is_sharded,
+                keep_x_dst_sharded=keep_x_dst_sharded,
+                edge_shard_shapes=edge_shard_shapes,
+                cond=cond,
+            )
         else:  # self.shard_strategy == "heads"
-            return checkpoint(self.mapper_forward_with_heads_sharding, **kwargs_forward, use_reentrant=False)
+            return checkpoint(
+                self.mapper_forward_with_heads_sharding,
+                x,
+                batch_size,
+                shard_shapes,
+                edge_attr,
+                edge_index,
+                model_comm_group,
+                x_src_is_sharded,
+                x_dst_is_sharded,
+                keep_x_dst_sharded,
+                edge_shard_shapes,
+                cond,
+                use_reentrant=False,
+            )
 
 
 class GraphTransformerForwardMapper(GraphTransformerBaseMapper):
@@ -777,7 +786,7 @@ class GNNBaseMapper(BaseMapper, ABC):
         x_dst_is_sharded: bool = False,
         keep_x_dst_sharded: bool = False,
         edge_shard_shapes: Optional[tuple] = None,
-        **kwargs,
+        cond: tuple[Tensor, Tensor] | Tensor | None = None,  # accepted but unused by GNN mappers
     ) -> PairTensor:
 
         size = (sum(x[0] for x in shard_shapes[0]), sum(x[0] for x in shard_shapes[1]))
@@ -803,7 +812,6 @@ class GNNBaseMapper(BaseMapper, ABC):
             (shapes_src, shapes_dst),
             model_comm_group,
             size=size,
-            **kwargs,
         )
 
         x_dst = self.post_process(
@@ -824,21 +832,22 @@ class GNNBaseMapper(BaseMapper, ABC):
         x_dst_is_sharded: bool = False,
         keep_x_dst_sharded: bool = False,
         edge_shard_shapes: Optional[tuple] = None,
+        cond: tuple[Tensor, Tensor] | Tensor | None = None,
         **kwargs,
     ) -> PairTensor:
         return checkpoint(
             self.mapper_forward,
-            x=x,
-            batch_size=batch_size,
-            shard_shapes=shard_shapes,
-            edge_attr=edge_attr,
-            edge_index=edge_index,
-            model_comm_group=model_comm_group,
-            x_src_is_sharded=x_src_is_sharded,
-            x_dst_is_sharded=x_dst_is_sharded,
-            keep_x_dst_sharded=keep_x_dst_sharded,
-            edge_shard_shapes=edge_shard_shapes,
-            **kwargs,
+            x,
+            batch_size,
+            shard_shapes,
+            edge_attr,
+            edge_index,
+            model_comm_group,
+            x_src_is_sharded,
+            x_dst_is_sharded,
+            keep_x_dst_sharded,
+            edge_shard_shapes,
+            cond,
             use_reentrant=False,
         )
 
@@ -1188,18 +1197,18 @@ class TransformerBaseMapper(BaseMapper, ABC):
         x_dst_is_sharded: bool = False,
         keep_x_dst_sharded: bool = False,
         edge_shard_shapes: Optional[tuple] = None,
+        cond: tuple[Tensor, Tensor] | Tensor | None = None,  # accepted but unused by Transformer mappers
         **kwargs,
     ) -> PairTensor:
         return checkpoint(
             self.mapper_forward,
-            x=x,
-            batch_size=batch_size,
-            shard_shapes=shard_shapes,
-            model_comm_group=model_comm_group,
-            x_src_is_sharded=x_src_is_sharded,
-            x_dst_is_sharded=x_dst_is_sharded,
-            keep_x_dst_sharded=keep_x_dst_sharded,
-            **kwargs,
+            x,
+            batch_size,
+            shard_shapes,
+            model_comm_group,
+            x_src_is_sharded,
+            x_dst_is_sharded,
+            keep_x_dst_sharded,
             use_reentrant=False,
         )
 
