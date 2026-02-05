@@ -258,7 +258,7 @@ class AnemoiEnsModelEncProcDec(AnemoiModelEncProcDec):
                         batch_size=batch_size,
                         ensemble_size=ensemble_size,
                         grid_size=self.node_attributes[dataset_name].num_nodes[self._graph_name_data],
-                        shard_shapes_ref=shard_shapes_shard_shapes_data,
+                        shard_shapes_ref=shard_shapes_data,
                         model_comm_group=model_comm_group,
                     )
 
@@ -337,7 +337,7 @@ class AnemoiEnsModelEncProcDec(AnemoiModelEncProcDec):
                         batch_size=batch_size,
                         ensemble_size=ensemble_size,
                         grid_size=self.node_attributes[dataset_name].num_nodes[self._graph_name_data],
-                        shard_shapes_ref=shard_shapes_shard_shapes_data,
+                        shard_shapes_ref=shard_shapes_data_dict[dataset_name],
                         model_comm_group=model_comm_group,
                     )
 
