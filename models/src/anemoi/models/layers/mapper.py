@@ -355,13 +355,6 @@ class GraphTransformerBaseMapper(BaseMapper, ABC):
         edge_shard_shapes: Optional[tuple] = None,
         **kwargs,
     ) -> PairTensor:
-        # When cond is a plain Tensor (not a tuple), prepare_edge_sharding_wrapper
-        # does not operate on it — it only processes tuple cond (syncing/slicing src/dst).
-        # Passing an unmodified Tensor through checkpoint creates an input-output alias
-        # (same tensor object as both input and output), which causes "number of saved
-        # states" mismatches with use_reentrant=False. So we only pass cond through the
-        # checkpoint when it's a tuple that needs processing.
-        cond_for_prep = cond if isinstance(cond, tuple) else None
 
         x_src, x_dst, edge_attr, edge_index, shapes_src, shapes_dst, cond_prepped = checkpoint(
             self.prepare_edge_sharding_wrapper,
@@ -373,14 +366,10 @@ class GraphTransformerBaseMapper(BaseMapper, ABC):
             model_comm_group,
             x_src_is_sharded,
             x_dst_is_sharded,
-            cond_for_prep,
+            cond,
             edge_shard_shapes,
             use_reentrant=False,
         )
-
-        # Use the checkpoint-processed cond only when it was actually processed (tuple case)
-        if cond_for_prep is not None:
-            cond = cond_prepped
 
         size = (x_src.shape[0], x_dst.shape[0])  # node sizes of local graph shard
         num_chunks = max(self.num_chunks, NUM_CHUNKS_INFERENCE_MAPPER)
@@ -401,7 +390,7 @@ class GraphTransformerBaseMapper(BaseMapper, ABC):
                 batch_size,
                 size,
                 model_comm_group,
-                cond,
+                cond_prepped,
                 **kwargs,
                 use_reentrant=False,
             ).to(dtype=out_type)

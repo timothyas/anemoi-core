@@ -8,6 +8,7 @@
 # nor does it submit to any jurisdiction.
 
 
+import logging
 from abc import ABC
 from typing import Optional
 
@@ -30,6 +31,7 @@ from anemoi.models.layers.block import TransformerProcessorBlock
 from anemoi.models.layers.utils import load_layer_kernels
 from anemoi.utils.config import DotDict
 
+LOGGER = logging.getLogger(__name__)
 
 class BaseProcessor(nn.Module, ABC):
     """Base Processor."""
@@ -254,6 +256,53 @@ class TransformerProcessor(BaseProcessor):
 
         self.offload_layers(cpu_offload)
 
+    def run_layer_chunk(
+        self,
+        chunk_start: int,
+        data: tuple,
+        shard_shapes: list[list[int]],
+        batch_size: int,
+        model_comm_group: Optional[ProcessGroup] = None,
+        cond: Tensor | None = None,
+        **kwargs,
+    ) -> Tensor:
+        for layer_id in range(chunk_start, chunk_start + self.chunk_size):
+            data = self.proc[layer_id](
+                *data,
+                shard_shapes,
+                batch_size,
+                model_comm_group,
+                cond,
+                **kwargs,
+            )
+
+        return data
+
+    def run_layers(
+        self,
+        data: tuple,
+        shard_shapes: list[list[int]],
+        batch_size: int,
+        model_comm_group: Optional[ProcessGroup] = None,
+        cond: Tensor | None = None,
+        **kwargs,
+    ) -> Tensor:
+        """Run Layers with checkpoints around chunks."""
+        for chunk_start in range(0, self.num_layers, self.chunk_size):
+            data = checkpoint(
+                self.run_layer_chunk,
+                chunk_start,
+                data,
+                shard_shapes,
+                batch_size,
+                model_comm_group,
+                cond,
+                **kwargs,
+                use_reentrant=False,
+            )
+
+        return data
+
     def forward(
         self,
         x: Tensor,
@@ -262,7 +311,7 @@ class TransformerProcessor(BaseProcessor):
         edge_attr: Optional[Tensor] = None,
         edge_index: Optional[Adj] = None,
         model_comm_group: Optional[ProcessGroup] = None,
-        *args,
+        cond: Tensor | None = None,
         **kwargs,
     ) -> Tensor:
         shape_nodes = change_channels_in_shape(shard_shapes, self.num_channels)
@@ -271,7 +320,14 @@ class TransformerProcessor(BaseProcessor):
                 model_comm_group.size() == 1 or batch_size == 1
             ), "Only batch size of 1 is supported when model is sharded accross GPUs"
 
-        (x,) = self.run_layers((x,), shape_nodes, batch_size, model_comm_group=model_comm_group, **kwargs)
+        (x,) = self.run_layers(
+            (x,),
+            shape_nodes,
+            batch_size,
+            model_comm_group,
+            cond,
+            **kwargs,
+        )
 
         return x
 
