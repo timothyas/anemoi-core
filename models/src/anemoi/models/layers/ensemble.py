@@ -325,9 +325,9 @@ class SimpleNoiseConditioning(BaseNoiseInjector):
 
     def forward(
         self,
-        x: Tensor,
         batch_size: int,
         ensemble_size: int,
+        device: str,
         noise_dtype: torch.dtype = torch.float32,
     ) -> tuple[Tensor, Tensor]:
 
@@ -337,10 +337,10 @@ class SimpleNoiseConditioning(BaseNoiseInjector):
             self.noise_channels,
         )
 
-        noise = torch.randn(size=noise_shape, dtype=noise_dtype, device=x.device) * self.noise_std
+        noise = torch.randn(size=noise_shape, dtype=noise_dtype, device=device) * self.noise_std
         noise.requires_grad = False
 
-        noise = einops.rearrange(noise, "batch ensemble vars -> (batch ensemble) vars")  # shape of x
+        noise = einops.rearrange(noise, "batch ensemble vars -> (batch ensemble) vars")
 
         # Note: We intentionally don't use checkpoint() here because latent_noise is shared
         # across multiple downstream checkpoints (encoder, processor, decoder). Having a
@@ -349,4 +349,4 @@ class SimpleNoiseConditioning(BaseNoiseInjector):
         noise = self.noise_mlp(noise)
         LOGGER.debug("Noise noise.shape = %s, noise.norm: %.9e", noise.shape, torch.linalg.norm(noise))
 
-        return x, noise
+        return noise
