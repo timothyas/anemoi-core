@@ -237,9 +237,11 @@ class GraphTransformerBaseMapper(BaseMapper, ABC):
         model_comm_group: Optional[ProcessGroup] = None,
         x_src_is_sharded: bool = False,
         x_dst_is_sharded: bool = False,
-        cond: tuple[Tensor, Tensor] | Tensor | None = None,
         edge_shard_shapes: Optional[tuple] = None,
     ):
+        # NOTE: Do NOT pass cond through this checkpointed function!
+        # Passing the same tensor through multiple checkpoints causes position mismatches.
+        # Instead, return nodes_src so cond can be processed outside the checkpoint.
         x_src, x_dst = x
         shapes_src, shapes_dst = shard_shapes
 
@@ -270,16 +272,11 @@ class GraphTransformerBaseMapper(BaseMapper, ABC):
         size_src_full_dst_shard = (x_src.shape[0], x_dst.shape[0])
         x_src, edge_index, nodes_src = drop_unconnected_src_nodes(x_src, edge_index, size_src_full_dst_shard)
 
-        if isinstance(cond, tuple):  # sync cond_src to match x_src:
-            cond_src, cond_dst = cond
-            shapes_cond_src = change_channels_in_shape(shapes_src, cond_src.shape[-1])
-            cond_src_full = sync_tensor(cond_src, 0, shapes_cond_src, model_comm_group, gather_in_fwd=True)
-            cond = (cond_src_full[nodes_src], cond_dst)
-
         if not x_dst_is_sharded:
             x_dst = shard_tensor(x_dst, 0, shapes_dst, model_comm_group)
 
-        return x_src, x_dst, edge_attr, edge_index, shapes_src, shapes_dst, cond
+        # Return nodes_src so caller can process cond outside checkpoint
+        return x_src, x_dst, edge_attr, edge_index, shapes_src, shapes_dst, nodes_src
 
     def run_processor_chunk_edge_sharding(
         self,
@@ -291,8 +288,10 @@ class GraphTransformerBaseMapper(BaseMapper, ABC):
         batch_size: int,
         size: tuple[int],
         model_comm_group: Optional[ProcessGroup] = None,
-        cond: tuple[Tensor, Tensor] | Tensor | None = None,
     ) -> Tensor:
+        # NOTE: Do NOT add cond as a checkpoint argument! Passing the same tensor
+        # through multiple checkpoints causes position mismatches. Instead, cond is
+        # accessed via self._temp_cond which is set by the caller.
         x_src, x_dst = x
 
         # get subgraph of x_dst_chunk and incoming edges, drop unconnected src nodes
@@ -310,6 +309,8 @@ class GraphTransformerBaseMapper(BaseMapper, ABC):
         x_dst_chunk = x_dst[dst_chunk]
         chunk_size = (x_src_chunk.shape[0], x_dst_chunk.shape[0])
 
+        # Get cond from temporary storage (NOT passed through checkpoint)
+        cond = self._temp_cond
         if isinstance(cond, tuple):  # update cond with correct conditioning
             cond_src, cond_dst = cond
             cond = (cond_src[connected_src_nodes], cond_dst[dst_chunk])
@@ -352,8 +353,10 @@ class GraphTransformerBaseMapper(BaseMapper, ABC):
         cond: tuple[Tensor, Tensor] | Tensor | None = None,
         edge_shard_shapes: Optional[tuple] = None,
     ) -> PairTensor:
+        # NOTE: Do NOT pass cond through checkpoint calls! Passing the same tensor
+        # through multiple checkpoints causes position mismatches during backward.
 
-        x_src, x_dst, edge_attr, edge_index, shapes_src, shapes_dst, cond_prepped = checkpoint(
+        x_src, x_dst, edge_attr, edge_index, shapes_src, shapes_dst, nodes_src = checkpoint(
             self.prepare_edge_sharding_wrapper,
             x,
             shard_shapes,
@@ -363,10 +366,17 @@ class GraphTransformerBaseMapper(BaseMapper, ABC):
             model_comm_group,
             x_src_is_sharded,
             x_dst_is_sharded,
-            cond,
             edge_shard_shapes,
             use_reentrant=False,
         )
+
+        # Process cond OUTSIDE checkpoint to avoid tensor position issues
+        if isinstance(cond, tuple):
+            # Sync cond_src to match x_src (which had unconnected nodes dropped)
+            cond_src, cond_dst = cond
+            shapes_cond_src = change_channels_in_shape(shard_shapes[0], cond_src.shape[-1])
+            cond_src_full = sync_tensor(cond_src, 0, shapes_cond_src, model_comm_group, gather_in_fwd=True)
+            cond = (cond_src_full[nodes_src], cond_dst)
 
         size = (x_src.shape[0], x_dst.shape[0])  # node sizes of local graph shard
         num_chunks = max(self.num_chunks, NUM_CHUNKS_INFERENCE_MAPPER)
@@ -375,6 +385,10 @@ class GraphTransformerBaseMapper(BaseMapper, ABC):
         out_channels = self.out_channels_dst if self.out_channels_dst is not None else self.hidden_dim
         out_type = torch.get_autocast_gpu_dtype() if torch.is_autocast_enabled() else x_dst.dtype
         out_dst = torch.empty((*x_dst.shape[:-1], out_channels), device=x_dst.device, dtype=out_type)
+
+        # Store cond temporarily - accessed by run_processor_chunk_edge_sharding via self._temp_cond
+        # This avoids passing cond through checkpoint which causes tensor position mismatches
+        self._temp_cond = cond
 
         for dst_chunk in dst_chunks:
             out_dst[dst_chunk] = checkpoint(
@@ -387,9 +401,11 @@ class GraphTransformerBaseMapper(BaseMapper, ABC):
                 batch_size,
                 size,
                 model_comm_group,
-                cond_prepped,
                 use_reentrant=False,
             ).to(dtype=out_type)
+
+        # Clean up temporary storage
+        del self._temp_cond
 
         if not keep_x_dst_sharded:  # gather after processing chunks
             out_dst = gather_tensor(out_dst, 0, change_channels_in_shape(shapes_dst, out_channels), model_comm_group)
@@ -408,8 +424,8 @@ class GraphTransformerBaseMapper(BaseMapper, ABC):
         x_dst_is_sharded: bool = False,
         keep_x_dst_sharded: bool = False,
         edge_shard_shapes: Optional[tuple] = None,
-        cond: tuple[Tensor, Tensor] | Tensor | None = None,
     ) -> PairTensor:
+        # NOTE: Do NOT add cond as a checkpoint argument! Access via self._temp_cond instead.
         size = (sum(x[0] for x in shard_shapes[0]), sum(x[0] for x in shard_shapes[1]))
 
         if edge_shard_shapes is not None:
@@ -427,6 +443,9 @@ class GraphTransformerBaseMapper(BaseMapper, ABC):
             x_src_is_sharded=x_src_is_sharded,
             x_dst_is_sharded=x_dst_is_sharded,
         )
+
+        # Get cond from temporary storage (NOT passed through checkpoint)
+        cond = self._temp_cond
 
         (x_src, x_dst), edge_attr = self.proc(
             x=(x_src, x_dst),
@@ -476,7 +495,10 @@ class GraphTransformerBaseMapper(BaseMapper, ABC):
                 cond=cond,
             )
         else:  # self.shard_strategy == "heads"
-            return checkpoint(
+            # Store cond temporarily - accessed inside checkpoint via self._temp_cond
+            # Do NOT pass cond through checkpoint to avoid tensor position mismatches
+            self._temp_cond = cond
+            result = checkpoint(
                 self.mapper_forward_with_heads_sharding,
                 x,
                 batch_size,
@@ -488,9 +510,10 @@ class GraphTransformerBaseMapper(BaseMapper, ABC):
                 x_dst_is_sharded,
                 keep_x_dst_sharded,
                 edge_shard_shapes,
-                cond,
                 use_reentrant=False,
             )
+            del self._temp_cond
+            return result
 
 
 class GraphTransformerForwardMapper(GraphTransformerBaseMapper):
