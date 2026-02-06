@@ -150,7 +150,6 @@ class TransformerProcessorBlock(BaseBlock):
         batch_size: int,
         model_comm_group: Optional[ProcessGroup] = None,
         cond: Optional[Tensor] = None,
-        **layer_kwargs,
     ) -> tuple[Tensor]:
 
         # In case we have conditionings we pass these to the layer norm

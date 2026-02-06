@@ -307,6 +307,7 @@ class TransformerProcessor(BaseProcessor):
         edge_attr: Optional[Tensor] = None,
         edge_index: Optional[Adj] = None,
         model_comm_group: Optional[ProcessGroup] = None,
+        edge_shard_shapes: Optional[tuple] = None,
         cond: Tensor | None = None,
     ) -> Tensor:
         shape_nodes = change_channels_in_shape(shard_shapes, self.num_channels)
