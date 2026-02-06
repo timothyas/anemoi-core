@@ -219,14 +219,18 @@ class AnemoiEnsModelEncProcDec(AnemoiModelEncProcDec):
         shard_shapes_hidden_dict = {}
 
         # Simple noise conditioning, do this once
+        noise_condition = {}
         if isinstance(self.noise_injector, SimpleNoiseConditioning):
             # in this case, we are using a global noise vector for all desired modules
             # we only need x to put the noise on the same device ... that's it
-            noise_condition = self.noise_injector(
+            cond = self.noise_injector(
                 batch_size=batch_size,
                 ensemble_size=ensemble_size,
                 device=next(iter(x.values())).device,
             )
+
+            for module_name in ["encoder", "processor", "decoder"]:
+                noise_condition[module_name] = cond if module_name in self.noise_conditioned_modules else None
 
         for dataset_name in dataset_names:
             x_data_latent, x_skip, shard_shapes_data = self._assemble_input(
@@ -253,7 +257,7 @@ class AnemoiEnsModelEncProcDec(AnemoiModelEncProcDec):
             # Get grid scale noise, if one of those options is desired, and handle condition kwarg
             if "encoder" in self.noise_conditioned_modules:
                 if not isinstance(self.noise_injector, SimpleNoiseConditioning):
-                    x_data_latent, noise_condition = self.noise_injector(
+                    x_data_latent, noise_condition["encoder"] = self.noise_injector(
                         x=x_data_latent,
                         batch_size=batch_size,
                         ensemble_size=ensemble_size,
@@ -274,7 +278,7 @@ class AnemoiEnsModelEncProcDec(AnemoiModelEncProcDec):
                 x_dst_is_sharded=False,  # x_latent does not come sharded
                 keep_x_dst_sharded=True,  # always keep x_latent sharded for the processor
                 edge_shard_shapes=enc_edge_shard_shapes,
-                cond=noise_condition,
+                cond=noise_condition["encoder"],
             )
             x_data_latent_dict[dataset_name] = x_data_latent
             dataset_latents[dataset_name] = x_latent
@@ -289,7 +293,7 @@ class AnemoiEnsModelEncProcDec(AnemoiModelEncProcDec):
 
         if "processor" in self.noise_conditioned_modules:
             if not isinstance(self.noise_injector, SimpleNoiseConditioning):
-                x_latent_proc, noise_condition = self.noise_injector(
+                x_latent_proc, noise_condition["processor"] = self.noise_injector(
                     x=x_latent,
                     batch_size=batch_size,
                     ensemble_size=ensemble_size,
@@ -314,7 +318,7 @@ class AnemoiEnsModelEncProcDec(AnemoiModelEncProcDec):
             edge_index=processor_edge_index,
             model_comm_group=model_comm_group,
             edge_shard_shapes=proc_edge_shard_shapes,
-            cond=noise_condition,
+            cond=noise_condition["processor"],
         )
 
         x_latent_proc = x_latent_proc + x_latent
@@ -332,7 +336,7 @@ class AnemoiEnsModelEncProcDec(AnemoiModelEncProcDec):
             # Get grid scale noise, if one of those options is desired, and handle condition kwarg
             if "decoder" in self.noise_conditioned_modules:
                 if not isinstance(self.noise_injector, SimpleNoiseConditioning):
-                    x_latent_proc, noise_condition = self.noise_injector(
+                    x_latent_proc, noise_condition["decoder"] = self.noise_injector(
                         x=x_latent_proc,
                         batch_size=batch_size,
                         ensemble_size=ensemble_size,
@@ -352,7 +356,7 @@ class AnemoiEnsModelEncProcDec(AnemoiModelEncProcDec):
                 x_dst_is_sharded=in_out_sharded,  # x_data_latent comes sharded iff in_out_sharded
                 keep_x_dst_sharded=in_out_sharded,  # keep x_out sharded iff in_out_sharded
                 edge_shard_shapes=dec_edge_shard_shapes,
-                cond=noise_condition,
+                cond=noise_condition["decoder"],
             )
 
             x_out_dict[dataset_name] = self._assemble_output(
