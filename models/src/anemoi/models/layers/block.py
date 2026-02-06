@@ -784,7 +784,6 @@ class GraphTransformerMapperBlock(GraphTransformerBaseBlock):
         size: Union[int, tuple[int, int]],
         model_comm_group: Optional[ProcessGroup] = None,
         cond: tuple[Tensor, Tensor] | Tensor | None = None,
-        **layer_kwargs,
     ):
         x_skip = x
 
