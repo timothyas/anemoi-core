@@ -454,7 +454,6 @@ class GraphTransformerBaseMapper(BaseMapper, ABC):
         keep_x_dst_sharded: bool = False,
         edge_shard_shapes: Optional[tuple] = None,
         cond: tuple[Tensor, Tensor] | Tensor | None = None,
-        **kwargs,
     ) -> PairTensor:
 
         if self.shard_strategy == "edges":
@@ -588,7 +587,7 @@ class GraphTransformerForwardMapper(GraphTransformerBaseMapper):
         x_dst_is_sharded: bool = False,
         keep_x_dst_sharded: bool = True,
         edge_shard_shapes: Optional[tuple] = None,
-        **kwargs,
+        cond: tuple[Tensor, Tensor] | Tensor | None = None,
     ) -> PairTensor:
         x_dst = super().forward(
             x,
@@ -601,7 +600,7 @@ class GraphTransformerForwardMapper(GraphTransformerBaseMapper):
             x_dst_is_sharded,
             keep_x_dst_sharded,
             edge_shard_shapes,
-            **kwargs,
+            cond,
         )
         return x[0], x_dst
 
