@@ -291,16 +291,17 @@ class NoiseInjector(BaseNoiseInjector):
 
 
 class SimpleNoiseConditioning(BaseNoiseInjector):
-    """Noise Conditioning, not necessarily at the grid scale and without an MLP"""
+    """Noise Conditioning, not necessarily at the grid scale and without an MLP
+
+    Note: num_channels is not used, it is only kept as an input because of the way noise injectors are created by the model class.
+    """
 
     def __init__(
         self,
         *,
         noise_std: int,
         noise_channels_dim: int,
-        noise_mlp_hidden_dim: int,
         num_channels: int | None = None,
-        layer_kernels: dict,
     ) -> None:
         """Initialize NoiseConditioning."""
         super().__init__()
@@ -317,7 +318,7 @@ class SimpleNoiseConditioning(BaseNoiseInjector):
         ensemble_size: int,
         device: str,
         noise_dtype: torch.dtype = torch.float32,
-    ) -> tuple[Tensor, Tensor]:
+    ) -> Tensor:
 
         noise_shape = (
             batch_size,
@@ -331,4 +332,57 @@ class SimpleNoiseConditioning(BaseNoiseInjector):
         noise = einops.rearrange(noise, "batch ensemble vars -> (batch ensemble) vars")
         LOGGER.debug("Noise noise.shape = %s, noise.norm: %.9e", noise.shape, torch.linalg.norm(noise))
 
+        return noise
+
+
+class MLPNoiseConditioning(SimpleNoiseConditioning):
+    """Noise Conditioning, adding one step of complexity, an MLP after noise generation
+
+    Once again, num_channels is not used, it is only kept as an input because of the way noise injectors are created by the model class.
+
+    """
+
+    def __init__(
+        self,
+        *,
+        noise_std: int,
+        noise_channels_dim: int,
+        num_channels: int,
+        noise_mlp_hidden_dim: int,
+        layer_kernels: dict,
+    ) -> None:
+        super().__init__(
+            noise_std=noise_std,
+            noise_channels_dim=noise_channels_dim,
+            num_channels=num_channels,
+        )
+
+        self.layer_factory = load_layer_kernels(layer_kernels)
+        self.noise_mlp = MLP(
+            in_features=noise_channels_dim,
+            hidden_dim=noise_mlp_hidden_dim,
+            out_features=noise_mlp_hidden_dim,
+            layer_kernels=self.layer_factory,
+            n_extra_layers=-1,
+            final_activation=False,
+            layer_norm=False,
+        )
+
+
+    def forward(
+        self,
+        batch_size: int,
+        ensemble_size: int,
+        device: str,
+        noise_dtype: torch.dtype = torch.float32,
+    ) -> Tensor:
+
+        noise = super().forward(
+            batch_size,
+            ensemble_size,
+            device,
+            noise_dtype,
+        )
+
+        noise = self.noise_mlp(noise)
         return noise

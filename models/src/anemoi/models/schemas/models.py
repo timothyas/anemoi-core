@@ -291,6 +291,12 @@ class SimpleNoiseConditioningSchema(BaseModel):
     "Standard deviation of the noise to be injected."
     noise_channels_dim: NonNegativeInt = Field(example=4)
     "Number of channels in the noise tensor."
+
+class MLPNoiseConditioningSchema(SimpleNoiseConditioningSchema):
+    """Schema for NoiseConditioning - generates noise for conditioning."""
+
+    target_: Literal["anemoi.models.layers.ensemble.MLPNoiseConditioning"] = Field(..., alias="_target_")
+    "Noise conditioning layer class"
     noise_mlp_hidden_dim: NonNegativeInt = Field(example=16)
     "Hidden dimension of the MLP used to process the noise."
     layer_kernels: Union[dict[str, dict], None] = Field(default_factory=dict)
@@ -298,7 +304,7 @@ class SimpleNoiseConditioningSchema(BaseModel):
 
 
 NoiseInjectorUnion = Annotated[
-    Union[NoOpNoiseInjectorSchema, NoiseConditioningSchema, NoiseInjectorSchema, SimpleNoiseConditioningSchema],
+    Union[NoOpNoiseInjectorSchema, NoiseConditioningSchema, NoiseInjectorSchema, SimpleNoiseConditioningSchema, MLPNoiseConditioningSchema],
     Field(discriminator="target_"),
 ]
 
