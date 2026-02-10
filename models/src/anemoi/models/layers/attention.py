@@ -25,6 +25,7 @@ from torch_geometric.typing import PairTensor
 
 from anemoi.models.distributed.transformer import shard_heads
 from anemoi.models.distributed.transformer import shard_sequence
+from anemoi.models.layers.normalization import ConditionalLayerNorm
 from anemoi.utils.config import DotDict
 
 LOGGER = logging.getLogger(__name__)
@@ -164,6 +165,7 @@ class MultiHeadSelfAttention(nn.Module):
         shapes: list,
         batch_size: int,
         model_comm_group: Optional[ProcessGroup] = None,
+        cond: Optional[Tensor, tuple[Tensor]] = None,
     ) -> Tensor:
         if model_comm_group:
             assert (
@@ -186,8 +188,15 @@ class MultiHeadSelfAttention(nn.Module):
         dropout_p = self.dropout_p if self.training else 0.0
 
         if self.qk_norm:
-            query = self.q_norm(query)
-            key = self.k_norm(key)
+            qkw = {}
+            kkw = {}
+            if isinstance(cond, Tensor):
+                if isinstance(self.q_norm, ConditionalLayerNorm):
+                    qkw = {"cond": cond}
+                if isinstance(self.k_norm, ConditionalLayerNorm):
+                    kkw = {"cond": cond}
+            query = self.q_norm(query, **qkw)
+            key = self.k_norm(key, **kkw)
 
         out = self.attention(
             query,
@@ -209,14 +218,19 @@ class MultiHeadSelfAttention(nn.Module):
         return out
 
     def forward(
-        self, x: Tensor, shapes: list, batch_size: int, model_comm_group: Optional[ProcessGroup] = None
+        self,
+        x: Tensor,
+        shapes: list,
+        batch_size: int,
+        model_comm_group: Optional[ProcessGroup] = None,
+        cond: Optional[Tensor, tuple[Tensor]] = None,
     ) -> Tensor:
 
         query = self.lin_q(x)
         key = self.lin_k(x)
         value = self.lin_v(x)
 
-        return self.attention_computation(query, key, value, shapes, batch_size, model_comm_group)
+        return self.attention_computation(query, key, value, shapes, batch_size, model_comm_group, cond)
 
 
 class SDPAAttentionWrapper(nn.Module):

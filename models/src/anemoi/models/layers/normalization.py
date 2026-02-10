@@ -44,6 +44,7 @@ class ConditionalLayerNorm(nn.Module):
         condition_shape: int = 16,
         zero_init: bool = True,
         autocast: bool = True,
+        learn_bias: bool = True,
     ) -> None:
         """Initialize Conditional Layer Normalization.
 
@@ -62,15 +63,17 @@ class ConditionalLayerNorm(nn.Module):
         """
         super().__init__()
         self.norm = nn.LayerNorm(normalized_shape, elementwise_affine=False)  # no learnable parameters
-        self.scale = nn.Linear(condition_shape, normalized_shape)  # , bias=False)
-        self.bias = nn.Linear(condition_shape, normalized_shape)  # , bias=False)
+        self.scale = nn.Linear(condition_shape, normalized_shape)
+        self.bias = nn.Linear(condition_shape, normalized_shape) if learn_bias else None
         self.autocast = autocast
+        self.learn_bias = learn_bias
 
         if zero_init:
             nn.init.zeros_(self.scale.weight)
             nn.init.zeros_(self.scale.bias)
-            nn.init.zeros_(self.bias.weight)
-            nn.init.zeros_(self.bias.bias)
+            if learn_bias:
+                nn.init.zeros_(self.bias.weight)
+                nn.init.zeros_(self.bias.bias)
 
     def forward(self, x: Tensor, cond: Tensor) -> Tensor:
         """Conditional Layer Normalization.
@@ -88,7 +91,9 @@ class ConditionalLayerNorm(nn.Module):
             Output tensor.
         """
         scale = self.scale(cond)
-        bias = self.bias(cond)
         out = self.norm(x)
-        out = out * (scale + 1.0) + bias
+        out = out * (scale + 1.0)
+        if self.learn_bias:
+            bias = self.bias(cond)
+            out = out + bias
         return out.type_as(x) if self.autocast else out

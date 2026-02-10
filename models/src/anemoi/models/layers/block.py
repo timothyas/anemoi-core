@@ -34,6 +34,7 @@ from anemoi.models.layers.attention import MultiHeadSelfAttention
 from anemoi.models.layers.conv import GraphConv
 from anemoi.models.layers.conv import GraphTransformerConv
 from anemoi.models.layers.mlp import MLP
+from anemoi.models.layers.normalization import ConditionalLayerNorm
 from anemoi.models.triton.utils import edge_index_to_csc
 from anemoi.models.triton.utils import is_triton_available
 from anemoi.utils.config import DotDict
@@ -156,7 +157,11 @@ class TransformerProcessorBlock(BaseBlock):
         cond_kwargs = {"cond": cond} if cond is not None else {}
 
         x = x + self.attention(
-            self.layer_norm_attention(x, **cond_kwargs), shapes, batch_size, model_comm_group=model_comm_group
+            self.layer_norm_attention(x, **cond_kwargs),
+            shapes,
+            batch_size,
+            model_comm_group=model_comm_group,
+            **cond_kwargs,
         )
         x = x + self.mlp(
             self.layer_norm_mlp(
@@ -817,8 +822,15 @@ class GraphTransformerMapperBlock(GraphTransformerBaseBlock):
             query, key, value, edges = self.prepare_qkve_edge_sharding(query, key, value, edges)
 
         if self.qk_norm:
-            query = self.q_norm(query)
-            key = self.k_norm(key)
+            qkw = {}
+            kkw = {}
+            if isinstance(cond, Tensor):
+                if isinstance(self.q_norm, ConditionalLayerNorm):
+                    qkw = {"cond": cond}
+                if isinstance(self.k_norm, ConditionalLayerNorm):
+                    kkw = {"cond": cond}
+            query = self.q_norm(query, **qkw)
+            key = self.k_norm(key, **kkw)
 
         out = self.attention_block(query, key, value, edges, edge_index, size, num_chunks=1)
 
