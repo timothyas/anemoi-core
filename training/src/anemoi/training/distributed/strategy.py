@@ -55,7 +55,7 @@ def register_gradient_scaling_hooks(
 def seed_rnd(model_comm_group_id: int, global_rank: int) -> None:
     """Seed the random number generators for the rank."""
     base_seed = get_base_seed()
-    initial_seed = base_seed * (model_comm_group_id + 1)
+    initial_seed = (base_seed * (model_comm_group_id + 1)) % (2**32)
     rnd_seed = pl.seed_everything(initial_seed)  # note: workers are seeded independently in dataloader
     np_rng = np.random.default_rng(rnd_seed)
     sanity_rnd = (torch.rand(1), np_rng.random())
