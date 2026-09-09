@@ -240,6 +240,19 @@ class BaseImputer(BasePreprocessor, ABC):
         # Replace values
         return self.fill_with_value(x, index, nan_locations, index)
 
+    def _index_data_output(self) -> list[int | None]:
+        """``index_training_output`` renumbered for a ``data.output.full``-shaped tensor.
+
+        ``data.output.name_to_index`` spans every variable in the dataset, so
+        ``index_training_output`` addresses the full data space. A tensor sliced down to
+        ``data.output.full`` -- what the plotting callbacks build, and what
+        InputNormalizer already accepts via its ``_output_idx`` branch -- is shorter
+        whenever forcing-only variables exist, so the indices have to be renumbered into
+        that slice. Imputed variables outside the slice map to None and are skipped.
+        """
+        position = {j: pos for pos, j in enumerate(self.data_indices.data.output.full.tolist())}
+        return [None if j is None else position.get(j) for j in self.index_training_output]
+
     def inverse_transform(
         self,
         x: torch.Tensor,
@@ -258,10 +271,14 @@ class BaseImputer(BasePreprocessor, ABC):
             index = self.index_training_output
         elif x.shape[-1] == self.num_inference_output_vars:
             index = self.index_inference_output
+        elif x.shape[-1] == len(self.data_indices.data.output.full):
+            index = self._index_data_output()
         else:
             raise ValueError(
                 f"Input tensor ({x.shape[-1]}) does not match the training "
-                f"({self.num_training_output_vars}) or inference shape ({self.num_inference_output_vars})",
+                f"({self.num_training_output_vars}), data-output "
+                f"({len(self.data_indices.data.output.full)}) or inference shape "
+                f"({self.num_inference_output_vars})",
             )
 
         if self.nan_locations is None:
