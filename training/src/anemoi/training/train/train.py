@@ -107,7 +107,6 @@ class AnemoiTrainer(ABC):
             or bool(self.config.training.fork_run_id)
             or bool(self.config.system.input.warm_start)
         )
-        LOGGER.info("Starting from checkpoint: %s", self.start_from_checkpoint)
 
         self.load_weights_only = self.config.training.load_weights_only
         self.parent_uuid = None
@@ -123,6 +122,7 @@ class AnemoiTrainer(ABC):
 
         # Update dry_run attribute, check if checkpoint exists
         self._check_dry_run()
+        LOGGER.info("Starting from checkpoint: %s", self.start_from_checkpoint)
 
         # Check for dry run, i.e. run id without data
         self._log_information()
@@ -664,7 +664,6 @@ class AnemoiTrainer(ABC):
         LOGGER.info("Checkpoints path: %s", self.config.system.output.checkpoints)
         LOGGER.info("Plots path: %s", self.config.system.output.plots)
 
-    @rank_zero_only
     def _check_dry_run(self) -> None:
         """Check if the run ID is dry, e.g. without a checkpoint.
 

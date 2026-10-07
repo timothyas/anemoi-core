@@ -15,6 +15,7 @@ from unittest.mock import patch
 import pytest
 from omegaconf import DictConfig
 from omegaconf import OmegaConf
+from pytorch_lightning.utilities.rank_zero import rank_zero_only
 
 from anemoi.training.train.train import AnemoiTrainer
 
@@ -312,3 +313,45 @@ def test_restart_run_id_file_not_found(
     assert trainer.run_id == run_id
     with pytest.raises(RuntimeError, match=r"Could not find last checkpoint"):
         _ = trainer.last_checkpoint
+
+
+def _check_dry_run_on_rank_one(
+    trainer: AnemoiTrainer,
+    monkeypatch: pytest.MonkeyPatch,
+) -> AnemoiTrainer:
+    """Run the real dry-run check on a non-zero rank, as every rank of a multi-GPU job does."""
+    monkeypatch.setattr(rank_zero_only, "rank", 1)
+    trainer.__dict__["logger"] = MagicMock(logger_name="mlflow")
+    trainer.__dict__["mlflow_logger"] = MagicMock(_parent_dry_run=True)
+    trainer._check_dry_run()
+    return trainer
+
+
+def test_a_dry_run_starts_fresh_on_every_rank(
+    trainer_factory: AnemoiTrainer,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = build_mock_config(run_id="run-id-123", checkpoints_path=tmp_path)
+
+    trainer = _check_dry_run_on_rank_one(trainer_factory(config), monkeypatch)
+
+    assert trainer.dry_run is True
+    assert trainer.start_from_checkpoint is False
+    assert trainer.last_checkpoint is None
+
+
+def test_a_dry_run_with_checkpoints_resumes_on_every_rank(
+    trainer_factory: AnemoiTrainer,
+    tmp_checkpoint_factory: pytest.TempPathFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    run_id = "run-id-123"
+    expected_path, checkpoints_path = tmp_checkpoint_factory(rid=run_id, ckpt_path_name="mock_checkpoints")
+    config = build_mock_config(run_id=run_id, checkpoints_path=checkpoints_path)
+
+    trainer = _check_dry_run_on_rank_one(trainer_factory(config), monkeypatch)
+
+    assert trainer.dry_run is False
+    assert trainer.start_from_checkpoint is True
+    assert trainer.last_checkpoint == expected_path
